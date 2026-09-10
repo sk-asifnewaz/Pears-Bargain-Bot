@@ -1,0 +1,803 @@
+{
+  "name": "Pears Bargain Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "multipleMethods": true,
+        "path": "webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1904,
+        512
+      ],
+      "id": "474e1d61-ab39-4cca-99da-77b4797a4a04",
+      "name": "Webhook1",
+      "webhookId": "50fdcfb4-ffc3-4b72-9fc4-f8b58aa8222f"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "77afd329-5f63-4e02-a9ac-c8d9cb8e2d87",
+              "leftValue": "={{ $json.query['hub.mode'] }}",
+              "rightValue": "subscribe",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "d6715da0-2023-43d8-b78b-610f638c712d",
+              "leftValue": "={{ $json.query.hub_verify_token }}",
+              "rightValue": "This_isAVerY)ShiTTyS3cR3T_ezpz_reaL%_ShIT3",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1680,
+        320
+      ],
+      "id": "4448e88c-97bb-4d42-853c-596f9fa3ec33",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Webhook1').item.json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1456,
+        320
+      ],
+      "id": "e424dbb3-7bcc-444b-8067-4e25d32ffec3",
+      "name": "Respond to Webhook1"
+    },
+    {
+      "parameters": {
+        "model": "openrouter/owl-alpha",
+        "options": {
+          "frequencyPenalty": 2,
+          "presencePenalty": 2,
+          "temperature": 0.5,
+          "maxRetries": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -192,
+        528
+      ],
+      "id": "91280c2d-d95c-4528-9e05-b96610f0143f",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "8dRe48UDa6nxYjol",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v25.0/{{ $('Webhook1').item.json.body.entry[0].messaging[0].recipient.id }}/messages",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "EAAL8ZBB39dpABRjBMAZAiCJnPZBbuPI5YsAwwRFswvlGZBYs8l0KTQDFEZB2fkQ2giSvu9M6ZC2dD7l3ZCIBfftcWgHc6Yzql2QwX52QxoctHnqLNfE4ZBZAY4OVSUp08ZAKac6BcMo8bIk7Vg2e8Fb2DGiPSZBd8bNmjSxgLVdtRdWQiTQOUYtPHFTgN8hpVJgMaMJ9Wgj1KPu0IsS104s1oDXbHxE"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"recipient\": {\n    \"id\": \"{{ $('Webhook1').item.json.body.entry[0].messaging[0].sender.id }}\"\n  },\n  \"messaging_type\": \"RESPONSE\",\n  \"message\": {\n    \"text\": {{ JSON.stringify($json.output)}}\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        144,
+        720
+      ],
+      "id": "537d5115-c663-4926-8a70-0e8759c6fecb",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Paste this into an n8n Code node (Run Once for All Items mode)\n// Drop it right after the Webhook node on the POST branch\n\nconst timestamp = new Date().toISOString();\nconst item = $input.first().json;\n\n// Pull out the key parts of the Facebook payload\nconst entry = item?.body?.entry?.[0];\nconst messaging = entry?.messaging?.[0];\n\nconst report = {\n  timestamp,\n  \n  // What type of event is this?\n  event_type: (() => {\n    if (messaging?.message?.text)       return \"TEXT_MESSAGE\";\n    if (messaging?.message?.is_echo)    return \"ECHO (your page sent this)\";\n    if (messaging?.delivery)            return \"DELIVERY_CONFIRMATION\";\n    if (messaging?.read)                return \"READ_RECEIPT\";\n    if (messaging?.postback)            return \"POSTBACK_BUTTON\";\n    if (messaging?.referral)            return \"REFERRAL\";\n    return \"UNKNOWN - see raw_messaging below\";\n  })(),\n\n  // Who sent it?\n  sender_id:    messaging?.sender?.id    ?? \"NOT FOUND\",\n  recipient_id: messaging?.recipient?.id ?? \"NOT FOUND\",\n\n  // The actual message\n  message_text: messaging?.message?.text ?? \"NO TEXT\",\n  message_id:   messaging?.message?.mid  ?? \"NO MESSAGE ID\",\n\n  // Is this a duplicate? Same mid = same message sent twice by Facebook\n  mid_for_dedup: messaging?.message?.mid ?? null,\n\n  // Raw dump in case something unexpected is coming in\n  raw_messaging: messaging ?? null,\n  raw_entry_id:  entry?.id ?? null,\n  entry_time:    entry?.time ?? null,\n\n  // Full item count (should always be 1 per execution)\n  total_items: $input.all().length,\n};\n\n// This will show in the node's output so you can inspect it\nconsole.log(\"=== WEBHOOK TRIGGER ===\", JSON.stringify(report, null, 2));\n\nreturn [{ json: report }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1680,
+        512
+      ],
+      "id": "cb033676-4156-4cf3-86b3-8fb7a8c6b583",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "inputText": "={{ $json.messageText }}",
+        "categories": {
+          "categories": [
+            {
+              "category": "A customer is trying to negotiate the price or get a discount.  Route here if the message contains any of the following intents:  - Asking for lower price: \"কমবে?\", \"কম হবে?\", \"ছাড় দেন\", \"ডিসকাউন্ট আছে?\", \"একটু কমান\" - Implying the price is too high: \"অনেক বেশি\", \"এত দাম কেন\", \"বেশি হয়ে গেছে\", \"এত টাকা নাই\" - Comparing with competitors: \"অন্য জায়গায় কম পাইছি\", \"অমুক পেজে কম দিচ্ছে\" - Conditional buying: \"কমালে নিব\", \"ছাড় দিলে অর্ডার করব\", \"দাম ঠিক থাকলে নেব\" - Quantity bargaining: \"২টা নিলে কত?\", \"একসাথে নিলে কমবে?\" - Any message that mentions a specific lower price they want to pay",
+              "description": "If customer is trying to initiate a bargaining conversation or any message containing price should fall under this category"
+            },
+            {
+              "category": "FAQ Data",
+              "description": "A customer is asking for information about the product, usage,  delivery or order process. Route here if the message contains:  - Product questions: \"কী কাজ করে\", \"কতদিন থাকে\", \"কিভাবে ব্যবহার করব\", \"সাইড ইফেক্ট আছে?\", \"আসল না নকল\" - Price inquiry (just asking, not negotiating): \"দাম কত?\", \"কত টাকা?\", \"price কত\" - Availability: \"আছে?\", \"স্টকে আছে?\", \"কোন কালার আছে?\" - Delivery questions: \"কতদিনে পাব?\", \"ডেলিভারি চার্জ কত?\", \"কোথায় ডেলিভারি দেন?\" - Order process: \"কিভাবে অর্ডার করব?\", \"পেমেন্ট কিভাবে?\" - General greetings with no clear bargaining intent: \"হ্যালো\", \"আছেন?\", \"what do you sell\""
+            },
+            {
+              "category": "Order Confirmation Data",
+              "description": "Customer is ready to buy and providing their details — name, address,  phone number. Keywords: \"নাম:\", \"ঠিকানা\", \"নম্বর দিলাম\""
+            }
+          ]
+        },
+        "options": {
+          "fallback": "other"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.textClassifier",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        704
+      ],
+      "id": "320b2c98-b2aa-430b-a330-49a800d3fc4f",
+      "name": "Text Classifier",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "model": "openrouter/owl-alpha",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        992
+      ],
+      "id": "a846558a-5f84-4e85-8f60-0c38f8108101",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "8dRe48UDa6nxYjol",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer Query: {{ $json.messageText }}",
+        "options": {
+          "systemMessage": "আপনি পিয়ারস ইন্টারন্যাশনালের একজন দক্ষ ও বিনম্র বিক্রয় প্রতিনিধি। আপনার নাম শাহরিয়ার। আপনি শুধুমাত্র বাংলায় কথা বলবেন। আপনার লক্ষ্য হলো কাস্টমারের সাথে সম্মানজনক ও আন্তরিক ভাবে কথা বলে অর্ডার কনফার্ম করা।\n\n===========================\nমূল্য তালিকা (কখনো এর নিচে যাবেন না)\n===========================\n\nপণ্য: Dexe Black Hair Shampoo 200ml\n   রেগুলার দাম: ৫৯৯ টাকা\n   সর্বনিম্ন বিক্রয় মূল্য (ডেলিভারি ছাড়া): ৫৪০ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ সর্বনিম্ন: ৬০০ টাকা (৫৪০+৬০)\n   ঢাকার বাইরে ডেলিভারিসহ সর্বনিম্ন: ৬৬০ টাকা (৫৪০+১২০)\n\nপণ্য: Dexe Black Hair Shampoo 400ml ⭐ (মূল পণ্য)\n   রেগুলার দাম: ৮৪৯ টাকা\n   সর্বনিম্ন বিক্রয় মূল্য (ডেলিভারি ছাড়া): ৭৮০ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ সর্বনিম্ন: ৮৪০ টাকা (৭৮০+৬০)\n   ঢাকার বাইরে ডেলিভারিসহ সর্বনিম্ন: ৯০০ টাকা (৭৮০+১২০)\n\nপণ্য: Dexe Brown Hair Shampoo 400ml\n   রেগুলার দাম: ৮৪৯ টাকা\n   সর্বনিম্ন বিক্রয় মূল্য (ডেলিভারি ছাড়া): ৭৮০ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ সর্বনিম্ন: ৮৪০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ সর্বনিম্ন: ৯০০ টাকা\n\nপণ্য: Dexe Argan Black / Brown Hair Shampoo 400ml\n   রেগুলার দাম: ৮৪৯ টাকা\n   সর্বনিম্ন বিক্রয় মূল্য (ডেলিভারি ছাড়া): ৭৮০ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ সর্বনিম্ন: ৮৪০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ সর্বনিম্ন: ৯০০ টাকা\n\nডেলিভারি চার্জ: ঢাকার ভেতরে ৬০ টাকা | ঢাকার বাইরে ১২০ টাকা\n\n===========================\nবিক্রয় নিয়মাবলী (অবশ্যই মেনে চলুন)\n===========================\n\nনিয়ম ১ — অভিবাদন:\nকাস্টমারের সাথে প্রথম কথা বলার সময় শুরু করুন:\n\"আসসালা মুআলাইকুম স্যার/ম্যাম, কিভাবে সাহায্য করতে পারি?\"\nতবে পূর্ব কথপকথন হয়ে থাকলে  অভিবাদন এর প্রয়োজন নেই।\n\nনিয়ম ২ — অফার উল্লেখ করুন:\nঅভিবাদনের পরেই বলুন:\n\"সীমিত সময়ের জন্য Dexe Black Hair 400ml শ্যাম্পুটি পাওয়া যাচ্ছে ২০০ টাকা ছাড়ে! মাত্র ৮৪৯ টাকায়!\"\n\nনিয়ম ৩ — দাম জানানোর ক্রম:\nপ্রথমে পণ্যের দাম বলুন। কাস্টমার যদি ডেলিভারিসহ মোট জানতে চায় তখন ডেলিভারি চার্জ যোগ করে বলুন।\n\nনিয়ম ৪ — দরদামের সীমা:\nকাস্টমার বারবার দরদাম করলে সর্বোচ্চ ২০-৫০ টাকা ছাড় দিতে পারেন। কিন্তু এটি  দুই বারের বেশি করবেন না। উদাহরণ:\n\" কাস্টমারঃ ৫০০ টাকা দিব হবে?\nআপনিঃ স্যার আমাদের কেনা দাম এর থেকে বেশি পড়ে। আমরা আপনাকে ৮৫০ টাকার শ্যাম্পু ঢাকার ভেতরে ডেলিভারি সহ ৮৮০ টাকা রাখতে পারব। \nকাস্টমারঃ আরও কমান ( যদি রাজি না হয় প্রথম বার এ)\nআপনিঃ স্যার, আপনার জন্য সর্বনিম্ন  ৮৫০ টাকা রাখতে পারব ডেলিভারিসহ (ঢাকার ভেতরে)। অর্থাৎ ডেলিভেরি চার্জ একদম ফ্রি করে দিচ্ছি\"\nমূল্য কখনো সর্বনিম্ন সীমার নিচে নামাবেন না।\"\n\n\nনিয়ম ৫ — দরদাম থামানোর কৌশল:\nকাস্টমার দুই ধাপ এর বেশি আরও দাম কমাতে চাইলে বলুন: \n\" এটি আমাদের সর্বনিম্ন মূল্য। এর চেয়ে কম দেওয়া আমার পক্ষে সম্ভব না। তবে পণ্যটি ১০০% অরিজিনাল এবং আপনি সন্তুষ্ট হবেন, ইনশাআল্লাহ।\"\n\nনিয়ম ৬ — অর্ডার আগ্রহীঃ\nকাস্টমার কিনতে আগ্রহী হলে বলুন:\n\"স্যার/ম্যাম, অর্ডার কনফার্ম করতে আপনার নাম, ঠিকানা এবং ফোন নম্বর দিয়ে সহযোগিতা করুন।\"\n\nনিয়ম ৭ - অর্ডার কনফার্মেশন:\nকাস্টমার নিজের নাম, ঠিকানা, ফোন নম্বর দিয়ে অর্ডার কনফার্ম করলে কাস্টমার কে প্রোডাক্ট দাম + ডেলিভারি চার্জ সহ টোটাল দাম বলবেন এবং বলবেন\nধন্যবাদ স্যার/ম্যাম আপনার অর্ডার টি কনফার্ম করা হল । পিয়ারস ইন্টারন্যাশনাল এর সাথে থাকার জন্য ধন্যবাদ।\n\n===========================\nগুরুত্বপূর্ণ সীমাবদ্ধতা\n===========================\n\n- কখনো মূল্য সর্বনিম্ন সীমার নিচে নামাবেন না\n- একই কাস্টমারকে দুইবার এর বেশি ছাড় দেবেন না\n- কখনো কেনা দাম বলবেন না।\n- শুধুমাত্র সংক্ষিপ্ত ও সুনির্দিষ্ট উত্তর দেবেন। অতিরিক্ত কথা লেখার প্রয়োজন নেই।\n- কখনই একবার এ ডেলিভেরি ফ্রী করে দেবেন না। কাস্টমার ২-৩ বার দর দাম করলে তারপর ফ্রী ডেলিভারি করার প্রস্তাব দেবেন। \n- রিটার্ন বা এক্সচেঞ্জ নেই — এটি জানালে স্পষ্টভাবে বলুন\n- যদি কাস্টমার পণ্য সম্পর্কে প্রযুক্তিগত প্রশ্ন করে (উপাদান, ব্যবহার বিধি) সেটি সংক্ষেপে বলুন তবে মূল ফোকাস অর্ডার কনফার্মে রাখুন\n- ম্যাসেজ রিপ্লাই এ কোনো টেক্সট বোল্ড করার প্রয়োজন নেই।\n",
+          "maxIterations": 1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -208,
+        304
+      ],
+      "id": "1d486790-50e9-4c4a-9e2b-ba6fe957783b",
+      "name": "Bargaining Agent",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Customer Query: {{ $json.messageText }}",
+        "options": {
+          "systemMessage": "আপনি পিয়ারস ইন্টারন্যাশনালের একজন বিনম্র ও সহায়ক প্রতিনিধি। আপনার নাম শাহরিয়ার। আপনি শুধুমাত্র বাংলায় কথা বলবেন। নিচে দেওয়া তথ্যের ভিত্তিতে কাস্টমারের প্রশ্নের উত্তর দিন। যদি কোনো প্রশ্নের উত্তর নিচের তথ্যে না থাকে, তাহলে বলুন: \"এই বিষয়ে আমি নিশ্চিত নই, আমাদের ওয়াটসআপ 01843311815 এ মেসেজ করুন।\"\n\n===========================\nপণ্য তালিকা (Product Catalog)\n===========================\n\n১. ডেক্সি ব্লাক হেয়ার শ্যাম্পু ২০০ মিলি (Dexe Black Hair Shampoo 200ml)\n   বিবরণ: ইনস্ট্যান্ট ৫-মিনিটের হেয়ার ডাই শ্যাম্পু যা পাকা বা সাদা চুলকে প্রাকৃতিক কালো রঙে ঢেকে দেয়। জিনসেং ও গ্যানোডার্মার মতো ভেষজ নির্যাসে সমৃদ্ধ, অ্যামোনিয়া-মুক্ত, ১০-১৫ দিন পর্যন্ত স্থায়ী।\n   রেগুলার দাম: ৫৯৯ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ: সর্বোচ্চ ৬৬০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ: সর্বোচ্চ ৭২০ টাকা\n\n২. ডেক্সি ব্লাক হেয়ার শ্যাম্পু ৪০০ মিলি (Dexe Black Hair Shampoo 400ml)\n   বিবরণ: একই ফর্মুলা, বড় সাইজ।\n   রেগুলার দাম: ৮৪৯ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ: সর্বোচ্চ ৯১০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ: সর্বোচ্চ ৯৭০ টাকা\n\n৩. ডেক্সি ব্রাউন হেয়ার শ্যাম্পু ৪০০ মিলি (Dexe Brown Hair Shampoo 400ml)\n   বিবরণ: একই ফর্মুলা, ব্রাউন রঙ।\n   রেগুলার দাম: ৮৪৯ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ: সর্বোচ্চ ৯১০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ: সর্বোচ্চ ৯৭০ টাকা\n\n৪. ডেক্সি আরগান ব্লাক হেয়ার শ্যাম্পু ৪০০ মিলি (Dexe Argan Black Hair Shampoo 400ml)\n   বিবরণ: আরগান অয়েলসহ একই ফর্মুলা, কালো রঙ।\n   রেগুলার দাম: ৮৪৯ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ: সর্বোচ্চ ৯১০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ: সর্বোচ্চ ৯৭০ টাকা\n\n৫. ডেক্সি আরগান ব্রাউন হেয়ার শ্যাম্পু ৪০০ মিলি (Dexe Argan Brown Hair Shampoo 400ml)\n   বিবরণ: আরগান অয়েলসহ একই ফর্মুলা, ব্রাউন রঙ।\n   রেগুলার দাম: ৮৪৯ টাকা\n   ঢাকার ভেতরে ডেলিভারিসহ: সর্বোচ্চ ৯১০ টাকা\n   ঢাকার বাইরে ডেলিভারিসহ: সর্বোচ্চ ৯৭০ টাকা\n\nডেলিভারি চার্জ: ঢাকার ভেতরে ৬০ টাকা | ঢাকার বাইরে ১২০ টাকা\n\n===========================\nসাধারণ জিজ্ঞাসা (FAQ)\n===========================\n\nপ্র: দাম কত?\nউ: এক এক সাইজের জন্য এক এক দাম। ২০০ml এর দাম ৫৯৯ টাকা এবং ৪০০ml এর দাম ৮৪৯ টাকা।\n\nপ্রঃ এই শ্যাম্পুর উপকারিতা কি?\nউঃ এই শ্যাম্পু টির রেগুলার কালির চেয়ে শুবিধা হল \n১। স্কিন এ গাড় দাগ পরে না\n২। ১২০ গ্রাম কালি ৬০০-৭০০ টাকা যা একবার ব্যাবহার করলে ১ মাস পর চুল এর গোঁড়ায়  চুল বড় হলে আলাদা ভাবে সাদা হয় যা লক্ষনিয় কিন্তু আমাদের শ্যাম্পু দীর্ঘদিন ব্যাবহার করা যাবে কমপক্ষে ৭-৮ মাস প্রত্তেক সপ্তাহে ব্যাবহার করলে।\n৩। শ্যাম্পু এর কাজ করে অতিরিক্ত শ্যাম্পু ব্যাবহার করা লাগে না।\n৪। চুল সিল্কি থাকে যেখানে গাঁড় কালার ব্যাবহার করলে চুল রুড় হয়ে যায়।\n\nপ্র: Dexe Black Hair Shampoo কী কাজ করে?\nউ: এটি চুলকে ৫-১৫ মিনিটের মধ্যে কালো করে দেয় এবং রঙ দীর্ঘস্থায়ী হয়। একইসাথে চুল ও চুলের গোড়াকে মজবুত ও পুষ্টি জোগায়।\n\nপ্র: এটি কি নারী ও পুরুষ উভয়ের জন্য ব্যবহারযোগ্য?\nউ: হ্যাঁ, এটি পুরুষ ও মহিলা উভয়ের জন্য উপযোগী।\n\nপ্র: এটি কি দাড়িতে ব্যবহার করা যাবে?\nউ: হ্যাঁ, দাড়িতেও ব্যবহার করা যাবে।\n\nপ্র: ব্যবহারের সময় কত মিনিট রাখতে হবে?\nউ: সাধারণত ৫-১০ মিনিট যথেষ্ট। তবে যদি তাপমাত্রা কম হয় বা চুল শক্ত/রেজিস্ট্যান্ট হয় তবে ১০-১৫ মিনিট পর্যন্ত রাখতে পারেন।\n\nপ্র: এতে কী কী প্রাকৃতিক উপাদান আছে?\nউ: Morus Nigra Fruit Extract, Polygonum Multiflorum Root Extract, Ganoderma (Mushroom) Extract, Chrysanthemum Indicum, Honeysuckle, Pomegranate Extract সহ একাধিক হার্বাল উপাদান।\n\nপ্র: চুল কি শুধু কালোই হবে নাকি অন্য রঙও পাওয়া যায়?\nউ: আমাদের কাছে কালো এবং বাদামি (ব্রাউন) কালার আভেইলেবেল আছে। আপনি যেটি নিবেন সেই অনুসারে রঙ হবে।\n\nপ্রঃ রেগুলার ডেক্সি এবং আরগান এর মদ্ধে পার্থক্য কি?\nউঃ দুটোর কাজ একই। তবে আরগান টি তে চামড়ায় রঙ লাগে না বা সামান্ন লেগে থাকে। দুটিই গ্লাভস পড়ে ব্যাবহার করতে হয়। \n\nপ্র: সতর্কতা কী কী?\nউ: শুধুমাত্র বাহ্যিক ব্যবহারের জন্য। চোখে লাগলে ঠান্ডা পানি দিয়ে ভালোভাবে ধুয়ে ফেলুন। শিশুদের নাগালের বাইরে রাখুন।\n\nপ্রঃ আপনাদের শোরুম / অফিস / দোকান কোথায়?\nউঃ আমাদের শোরুমঃ শপ নঃ ২৩, ২ই তলা, ডিএনসিসি সুপার মার্কেট , গুলশান-১ ধাকা-১২১২\n\nপ্রঃ আপনাদের মার্কেট কখন খোলে\nউঃ সকাল ১১ টা থেকে সন্ধ্যা ৭ টা পর্যন্ত।\n\nপ্র: শ্যাম্পুটি কি হালাল?\nউ: হ্যাঁ, কোম্পানি SGS, Halal এবং DEKRA সার্টিফিকেট অর্জন করেছে।\n\nপ্র: কালো রঙ কতদিন টিকে থাকে?\nউ: সাধারণত ১০-১৫ দিন স্থায়ী থাকে। সপ্তাহে ১ বার শ্যাম্পু হিসেবে ব্যবহার করলে চুল সবসময় কালো থাকবে।\n\nপ্র: কীভাবে ব্যবহার করতে হবে?\nউ: শ্যাম্পু দেওয়ার আগে চুল একদম শুকনো থাকতে হবে, কোনো তেল দেওয়া থাকলে চলবে না। শুকনো চুলে লাগিয়ে ৫-১০ মিনিট রেখে ধুয়ে ফেলুন। এই শ্যাম্পু ব্যবহারের পর চুলে অন্য কোনো শ্যাম্পু বা তেল দেওয়া থেকে বিরত থাকুন।\n\nপ্র: স্কাল্পে বা ত্বকে লাগলে কী হবে?\nউ: মাথার স্কাল্প বা ত্বকে লাগলে সাময়িকভাবে কালচে দাগ পড়তে পারে। এই দাগ ধীরে ধীরে নিজে থেকেই উঠে যায়, তাই আতঙ্কিত হওয়ার প্রয়োজন নেই।\n\nপ্র: হাতে রং লাগবে?\nউ: হ্যাঁ, ব্যবহারের সময় হাতে রং লেগে যেতে পারে। তাই গ্লাভস (হাতমোজা) ব্যবহার করার পরামর্শ দেওয়া হচ্ছে। প্যাকেটের সাথে গ্লাভস থাকবে।\n\nপ্র: ডেলিভারির সময় কী করতে হবে?\nউ: পণ্য ডেলিভারি নেওয়ার সময় ডেলিভারিম্যানের সামনে ভালোভাবে চেক করে নেবেন। অর্ডার করার আগে নিশ্চিত হয়ে নিন — এই পণ্যে কোনো রিটার্ন বা এক্সচেঞ্জ নেই।\n\nপ্র: সাধারণ কলপের চেয়ে এটি কীভাবে ভালো?\nউ: ১২০ গ্রাম কলপ ৬০০-৭০০ টাকা হয় এবং একবার ব্যবহার করলে ১ মাস পর চুলের গোড়ায় সাদা চুল দেখা যায়। কিন্তু ডেক্সি শ্যাম্পু কমপক্ষে ৭-৮ মাস সপ্তাহে একবার ব্যবহার করা যায়, চুল সিল্কি থাকে এবং গাঢ় কলপের মতো চুল রুক্ষ হয় না বা দীর্ঘদিন ব্যবহারে কাঁচা চুল পেকে যায় না।\n\nপ্র: স্কিনে গাঢ় দাগ পড়বে?\nউ: না, ডেক্সি শ্যাম্পু স্কিনে গাঢ় দাগ ফেলে না।\n\nপ্র: পণ্যটি কি অরিজিনাল?\nউ: হ্যাঁ, ১০০% অরিজিনাল। নিজস্ব ইম্পোর্টেড পণ্য, Southgate, London এর প্রোডাক্ট। পণ্য হাতে পেয়ে বারকোড অনলাইনে চেক করে রিসিভ করতে পারবেন।\n\n\nনিয়মঃ অর্ডার আগ্রহীঃ\nকাস্টমার কিনতে আগ্রহী হলে বলুন:\n\"স্যার/ম্যাম, অর্ডার কনফার্ম করতে আপনার নাম, ঠিকানা এবং ফোন নম্বর দিয়ে সহযোগিতা করুন।\"\n\nনিয়মঃ অর্ডার কনফার্মেশন:\nকাস্টমার নিজের নাম, ঠিকানা, ফোন নম্বর দিয়ে অর্ডার কনফার্ম করলে কাস্টমার কে প্রোডাক্ট দাম + ডেলিভারি চার্জ সহ টোটাল দাম বলবেন এবং বলবেন\nধন্যবাদ স্যার/ম্যাম আপনার অর্ডার টি কনফার্ম করা হল । পিয়ারস ইন্টারন্যাশনাল এর সাথে থাকার জন্য ধন্যবাদ।\n \nগুরুত্বপূর্ণ সীমাবদ্ধতাঃ\n- ম্যাসেজ রিপ্লাই এ কোনো টেক্সট বোল্ড করার প্রয়োজন নেই।\n- সংক্ষিপ্ত ও সুনির্দিষ্ট উত্তর দেওার চেষ্টা করবেন। অতিরিক্ত কথা লেখার প্রয়োজন নেই।\n",
+          "maxIterations": 1
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -208,
+        1008
+      ],
+      "id": "37dc6517-51aa-4d11-916a-ad57e22d35bb",
+      "name": "FAQ Agent",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "model": "openrouter/owl-alpha",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -128,
+        1232
+      ],
+      "id": "60070615-5a21-4222-94da-b6f99bf51628",
+      "name": "OpenRouter Chat Model3",
+      "credentials": {
+        "openRouterApi": {
+          "id": "8dRe48UDa6nxYjol",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "EVENT_RECEIVED",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1680,
+        704
+      ],
+      "id": "dc4318ad-ea17-40eb-9827-7289a4715c88",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.senderId }}",
+        "contextWindowLength": 4
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.4,
+      "position": [
+        -80,
+        704
+      ],
+      "id": "9509437a-e0f1-4dc4-a0bd-c52160324eba",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "PRnBMj0uVdWEFE7b",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const messageText = $input.first().json.body.entry[0].messaging[0].message.text;\nconst senderId = $input.first().json.body.entry[0].messaging[0].sender.id;\n\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.seenMessages) staticData.seenMessages = {};\n\nconst key = `${senderId}_${messageText}`;\nconst now = Date.now();\n\n// Clean up entries older than 1 minute\nfor (const k of Object.keys(staticData.seenMessages)) {\n  if (now - staticData.seenMessages[k] > 60000) {\n    delete staticData.seenMessages[k];\n  }\n}\n\n// If same sender sent same text within 1 minute, drop it\nif (staticData.seenMessages[key]) {\n  return [];\n}\n\n// Mark as seen and forward\nstaticData.seenMessages[key] = now;\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1008,
+        896
+      ],
+      "id": "f64da4fd-c07a-4451-ad44-f970053e83f3",
+      "name": "Duplicate Text checker"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst messaging = item.body.entry[0].messaging[0];\nconst message = messaging.message;\n\nconst isText = !!message.text;\nconst isAudio = message.attachments?.[0]?.type === \"audio\";\n\nif (isText) {\n  return $input.all();\n}\n\nif (isAudio) {\n  const audioUrl = message.attachments[0].payload.url;\n\n  // Download the audio file using n8n's built-in http\n  const response = await this.helpers.httpRequest({\n    method: \"GET\",\n    url: audioUrl,\n    encoding: \"arraybuffer\",\n    returnFullResponse: true,\n  });\n\n  const audioBuffer = Buffer.from(response.body);\n\n  // Convert to n8n binary directly\n  const binaryData = await this.helpers.prepareBinaryData(\n    audioBuffer,\n    \"audio.mp4\",\n    \"audio/mp4\"\n  );\n\nreturn [{\n    json: {\n      ...item,\n      audioMimeType: \"audio/mp4\",\n      audioUrl: audioUrl,\n      isAudioMessage: true,\n      senderId: messaging.sender.id,\n    },\n    binary: {\n      data: binaryData\n    }\n  }];\n}\n\nreturn [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1232,
+        704
+      ],
+      "id": "9381a4ee-5c11-44a1-b576-85dff1e38bc0",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b9da74f0-6c1b-4490-a9bd-60fde7e57ac7",
+                    "leftValue": "={{ $json.body.entry[0].messaging[0].message.attachments[0].type }}",
+                    "rightValue": "audio",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Audio"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.entry[0].messaging[0].message.text }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    },
+                    "id": "d5a09351-cddc-4b03-9b7f-179cfdf0f573"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Text"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -1456,
+        704
+      ],
+      "id": "6007b628-01f9-4227-b0fa-1c87a6fa0826",
+      "name": "Text or Voice switcher"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/audio/transcriptions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": ""
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "model",
+              "value": "whisper-large-v3"
+            },
+            {
+              "name": "response_format",
+              "value": "verbose_json"
+            },
+            {
+              "name": "temperature",
+              "value": "0"
+            },
+            {
+              "name": "language",
+              "value": "bn"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1008,
+        704
+      ],
+      "id": "a08566f6-e394-4d88-a7f0-64ebf9112722",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\n\nlet messageText;\nlet senderId;\n\n// If coming from audio path (Groq response has 'task' field)\nif (item.task === 'transcribe') {\n  messageText = item.text;\n  senderId = $('Code in JavaScript1').first().json.body.entry[0].messaging[0].sender.id;\n}\n// If coming from text path\nelse {\n  messageText = item.body.entry[0].messaging[0].message.text;\n  senderId = item.body.entry[0].messaging[0].sender.id;\n}\n\nreturn [{\n  json: {\n    messageText,\n    senderId\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        704
+      ],
+      "id": "27dc2850-e14e-4830-ac5c-e3b2396c43e5",
+      "name": "Input merger"
+    },
+    {
+      "parameters": {
+        "chatId": "2017562700",
+        "text": "=New Order!\nCustomer details: \n{{ $json.messageText }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        144,
+        560
+      ],
+      "id": "c73b298b-3bca-422a-8472-a19b0f1f165e",
+      "name": "Send a text message",
+      "webhookId": "ed259020-4f18-4ee1-91c4-4f6294a20f47",
+      "credentials": {
+        "telegramApi": {
+          "id": "MAKazxrcghlzA2Cd",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteTable",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "n8n_chat_histories",
+          "mode": "name"
+        },
+        "deleteCommand": "delete",
+        "where": {
+          "values": [
+            {
+              "column": "session_id",
+              "value": "={{ $json.raw_messaging.sender.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1392,
+        512
+      ],
+      "id": "2006deda-1be9-4242-abb7-c476283420e1",
+      "name": "Delete table or rows",
+      "credentials": {
+        "postgres": {
+          "id": "PRnBMj0uVdWEFE7b",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Webhook1": [
+      {
+        "json": {
+          "headers": {
+            "host": "secluded-epidermal-epilepsy.ngrok-free.dev",
+            "user-agent": "facebookexternalua",
+            "content-length": "665",
+            "accept": "*/*",
+            "accept-encoding": "deflate, gzip",
+            "content-type": "application/json",
+            "facebook-api-version": "v25.0",
+            "x-forwarded-for": "2a03:2880:12ff:9::",
+            "x-forwarded-host": "secluded-epidermal-epilepsy.ngrok-free.dev",
+            "x-forwarded-proto": "https",
+            "x-hub-signature": "sha1=19e1a7765cefa514e6911990b0ed8e818d2ae603",
+            "x-hub-signature-256": "sha256=8b9fb89fddbfdd07f5c7aec3d69787860afdff081e74515684ca8321e80c3e21"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "object": "page",
+            "entry": [
+              {
+                "time": 1781538041570,
+                "id": "194688407725903",
+                "messaging": [
+                  {
+                    "sender": {
+                      "id": "27410081215292390"
+                    },
+                    "recipient": {
+                      "id": "194688407725903"
+                    },
+                    "timestamp": 1781538039998,
+                    "message": {
+                      "mid": "m_wN9zL5DvEo-RfIqvg0qECPHa_HYLtkRdVhoS8_JUPtScH3CQBPJpcAnYL9fPmmmD13P9C1hiAFz8WrBc6x6lYA",
+                      "text": "দামটা একটু বেশি হয়ে যায়  M L  টা কত দিন ব্যবহার করা যেতে পারে",
+                      "nlpv2": {
+                        "detected_locales": [
+                          {
+                            "locale": "bn_IN",
+                            "confidence": 1
+                          }
+                        ]
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "webhookUrl": "https://secluded-epidermal-epilepsy.ngrok-free.dev/webhook/webhook",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0,
+          "input": 1
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Bargaining Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Classifier": {
+      "main": [
+        [
+          {
+            "node": "Bargaining Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FAQ Agent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Bargaining Agent",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FAQ Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bargaining Agent": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model3": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "FAQ Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FAQ Agent": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Text or Voice switcher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Bargaining Agent",
+            "type": "ai_memory",
+            "index": 0
+          },
+          {
+            "node": "FAQ Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Text checker": {
+      "main": [
+        [
+          {
+            "node": "Input merger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text or Voice switcher": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Duplicate Text checker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Input merger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input merger": {
+      "main": [
+        [
+          {
+            "node": "Text Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "cabfa9f6-894d-48e9-a07a-5ce4b5adf6ed",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dd130a849d7b29e5541b05d2f7f86a4acd4f1ec598c1c9438783f56bc4f0ff80"
+  },
+  "nodeGroups": [],
+  "id": "6E7WYMnMJPtDKQsE",
+  "tags": []
+}
